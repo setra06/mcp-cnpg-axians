@@ -1,8 +1,8 @@
 {
   "name": "@setra06/mcp-cnpg-axians",
-  "version": "3.6.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "MCP server for CloudNativePG (CNPG 1.24+/1.29). 53 tools covering cluster lifecycle, backups & restore, declarative Database/Publication/Subscription CRDs, ImageCatalog upgrades, PgBouncer pooler, hibernation, switchover/promote, and observability.",
+  "description": "MCP server for CloudNativePG (CNPG 1.24+/1.29). 67 tools covering cluster lifecycle, backups & restore, declarative Database/Publication/Subscription CRDs, ImageCatalog upgrades, PgBouncer pooler, hibernation, switchover/promote, multi-context, and observability.",
   "main": "dist/index.js",
   "bin": {
     "mcp-cnpg-axians": "dist/index.js"

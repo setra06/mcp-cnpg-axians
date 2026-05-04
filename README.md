@@ -4,8 +4,6 @@ A Model Context Protocol (MCP) server for managing CloudNativePG PostgreSQL clus
 
 Developed by Axians for the Kubernetes and PostgreSQL community.
 
-> **v3.0.0 (May 2026)** — Major rewrite. The 2.x line had several broken tools (no-op writes against `bootstrap.initdb` on live clusters, wrong switchover annotation, wrong PostgreSQL image, arg/interface mismatches). v3 fixes those, splits the source into per-resource modules, and adds support for the modern CNPG 1.24+/1.29 CRDs (`Database`, `Publication`, `Subscription`, `ImageCatalog`). See [CHANGELOG.md](CHANGELOG.md) for the detailed list. Tool count: **53**.
-
 ## Features
 
 Coverage spans the CNPG operator surface up to 1.29:
