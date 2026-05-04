@@ -1,11 +1,11 @@
 {
-  "name": "@cuspofaries/axians-mcp-cnpg-server",
+  "name": "@setra06/mcp-cnpg-axians",
   "version": "3.6.0",
   "type": "module",
   "description": "MCP server for CloudNativePG (CNPG 1.24+/1.29). 53 tools covering cluster lifecycle, backups & restore, declarative Database/Publication/Subscription CRDs, ImageCatalog upgrades, PgBouncer pooler, hibernation, switchover/promote, and observability.",
   "main": "dist/index.js",
   "bin": {
-    "cnpg-axians-mcp-server": "dist/index.js"
+    "mcp-cnpg-axians": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -45,11 +45,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cuspofaries/cnpg-axians-mcp-server.git"
+    "url": "git+https://github.com/setra06/mcp-cnpg-axians.git"
   },
-  "homepage": "https://github.com/cuspofaries/cnpg-axians-mcp-server#readme",
+  "homepage": "https://github.com/setra06/mcp-cnpg-axians#readme",
   "bugs": {
-    "url": "https://github.com/cuspofaries/cnpg-axians-mcp-server/issues"
+    "url": "https://github.com/setra06/mcp-cnpg-axians/issues"
   },
   "engines": {
     "node": ">=18.0.0"

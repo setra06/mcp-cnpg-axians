@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.6.0] - 2026-05-04
 
 ### Added
-- **`K8S_CONTEXTS`** env var: a JSON array of context descriptors `[{name, apiUrl, tokenEnv, caCertEnv?, skipTLSVerify?}, ...]` (or `{name, kubeconfigPath, kubeconfigContext?}`). When set, the server runs in multi-context mode and every tool accepts an optional `context: string` argument naming which cluster to target. Closes [#39](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/39).
+- **`K8S_CONTEXTS`** env var: a JSON array of context descriptors `[{name, apiUrl, tokenEnv, caCertEnv?, skipTLSVerify?}, ...]` (or `{name, kubeconfigPath, kubeconfigContext?}`). When set, the server runs in multi-context mode and every tool accepts an optional `context: string` argument naming which cluster to target. Closes [#39](https://github.com/setra06/mcp-cnpg-axians/issues/39).
 - **`list_contexts`** meta tool: lists configured context names, the default context, and per-context build status.
 - **`ContextRegistry`** in `src/contexts.ts`: lazy K8sClients construction per context, with explicit error messages on unknown context names.
 
@@ -28,9 +28,9 @@ Tool count: 66 → 67.
 ## [3.5.0] - 2026-05-04
 
 ### Added
-- **`get_cluster_overview`** in `src/tools/operations.ts`. Aggregates the cluster CR status, pods (with role/restarts/ready/age), the 10 most recent events, the latest backup (phase, age, method), and TLS certificate expiry windows (server + CA, days remaining). One call replaces five round-trips. Closes part of [#35](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/35).
-- **`hibernate_dump`**: returns the cluster CR + the cluster's `-ca`, `-server`, `-replication`, `-app`, `-superuser` secrets as a single re-applyable JSON document, with managedFields/resourceVersion stripped. Mirrors `kubectl cnpg hibernate dump`. Closes part of [#35](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/35).
-- **`run_sql`**: runs a SQL query against the cluster's primary via `pods/exec` → `psql`. Read-only by default — wraps the user query in `BEGIN READ ONLY; ...; COMMIT;`, so any DDL/DML fails with `cannot execute X in a read-only transaction`. Pass `readWrite: true` to disable. Defaults to the cluster's `app` database via the local peer-mapped postgres user (no password needed). Closes part of [#35](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/35).
+- **`get_cluster_overview`** in `src/tools/operations.ts`. Aggregates the cluster CR status, pods (with role/restarts/ready/age), the 10 most recent events, the latest backup (phase, age, method), and TLS certificate expiry windows (server + CA, days remaining). One call replaces five round-trips. Closes part of [#35](https://github.com/setra06/mcp-cnpg-axians/issues/35).
+- **`hibernate_dump`**: returns the cluster CR + the cluster's `-ca`, `-server`, `-replication`, `-app`, `-superuser` secrets as a single re-applyable JSON document, with managedFields/resourceVersion stripped. Mirrors `kubectl cnpg hibernate dump`. Closes part of [#35](https://github.com/setra06/mcp-cnpg-axians/issues/35).
+- **`run_sql`**: runs a SQL query against the cluster's primary via `pods/exec` → `psql`. Read-only by default — wraps the user query in `BEGIN READ ONLY; ...; COMMIT;`, so any DDL/DML fails with `cannot execute X in a read-only transaction`. Pass `readWrite: true` to disable. Defaults to the cluster's `app` database via the local peer-mapped postgres user (no password needed). Closes part of [#35](https://github.com/setra06/mcp-cnpg-axians/issues/35).
 
 ### Added (internal)
 - `podExec(kc, args)` helper in `src/k8s.ts` wrapping `@kubernetes/client-node`'s `Exec` API. Collects stdout/stderr fully and reports the exit code.
@@ -48,7 +48,7 @@ Tool count: 63 → 66.
 ## [3.4.0] - 2026-05-04
 
 ### Changed (additive — no breaking)
-- **`get_cluster`, `get_database`, `get_pooler`, `get_backup_details`** now accept `fields: string[]` (dot-separated JSON paths to project) and `raw: boolean` (default false; when true, return the full Kubernetes object as before). The default behaviour now strips metadata noise (`managedFields`, `resourceVersion`, `uid`, `generation`, `finalizers`, `ownerReferences`, `selfLink`) so a typical `get_cluster` reply is dramatically smaller — `managedFields` alone often dominates the response. Closes [#33](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/33).
+- **`get_cluster`, `get_database`, `get_pooler`, `get_backup_details`** now accept `fields: string[]` (dot-separated JSON paths to project) and `raw: boolean` (default false; when true, return the full Kubernetes object as before). The default behaviour now strips metadata noise (`managedFields`, `resourceVersion`, `uid`, `generation`, `finalizers`, `ownerReferences`, `selfLink`) so a typical `get_cluster` reply is dramatically smaller — `managedFields` alone often dominates the response. Closes [#33](https://github.com/setra06/mcp-cnpg-axians/issues/33).
 
 ### Added (internal)
 - `project(obj, paths)`, `stripMetadataNoise(obj)`, `projectOrStrip(obj, args)`, and `PROJECTION_SCHEMA_PROPERTIES` exported from `src/types.ts` so tools (and tests) can apply the same convention consistently.
@@ -61,12 +61,12 @@ Tool count: 63 → 66.
 ## [3.3.0] - 2026-05-04
 
 ### Added
-- **`register_external_cluster`** / **`unregister_external_cluster`** in `src/tools/replication.ts`. Idempotent on the entry name. Use before `create_subscription` so the Subscription's `externalClusterName` resolves. Closes [#41](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/41).
+- **`register_external_cluster`** / **`unregister_external_cluster`** in `src/tools/replication.ts`. Idempotent on the entry name. Use before `create_subscription` so the Subscription's `externalClusterName` resolves. Closes [#41](https://github.com/setra06/mcp-cnpg-axians/issues/41).
 - **`setup_logical_subscription`** composite tool that wires logical replication between two CNPG clusters in a single call: registers the source as an externalCluster on the local cluster (using its TLS replication secrets), creates the Subscription CR, and waits for `applied=true`. Cross-namespace requires `allowSecretCopy=true`. The K8s resource name and the SQL subscription name are derived separately so callers don't have to think about hyphen/underscore rules — `subscriptionName` is the K8s name (hyphens OK), `sqlSubscriptionName` is the PG name (defaults to the K8s name with `-` → `_`).
-- **`wipe_object_store_path`** in `src/tools/backups.ts`. Lists and deletes every object under the cluster's barman destination path on the configured S3 endpoint. Foot-gun protected by an exact-match `confirm` token. Reads S3 credentials from the cluster's configured `s3Credentials` secret. Closes one of the [#42](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/42) acceptance criteria.
+- **`wipe_object_store_path`** in `src/tools/backups.ts`. Lists and deletes every object under the cluster's barman destination path on the configured S3 endpoint. Foot-gun protected by an exact-match `confirm` token. Reads S3 credentials from the cluster's configured `s3Credentials` secret. Closes one of the [#42](https://github.com/setra06/mcp-cnpg-axians/issues/42) acceptance criteria.
 - **`pgHba`** parameter on `patch_cluster_config`. Appends user-defined pg_hba lines to `spec.postgresql.pg_hba`. Useful for e.g. extending cert auth to non-`postgres` databases for logical replication.
-- **`replace`** parameter on `configure_object_store` (default `true`). When `false` and a barmanObjectStore already targets the same destinationPath, the call is a no-op. Closes part of [#42](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/42).
-- **`ifNotExists`** parameter on `create_backup` (default `false`). When `true`, the call returns the existing Backup's status instead of erroring on conflict. Closes part of [#42](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/42).
+- **`replace`** parameter on `configure_object_store` (default `true`). When `false` and a barmanObjectStore already targets the same destinationPath, the call is a no-op. Closes part of [#42](https://github.com/setra06/mcp-cnpg-axians/issues/42).
+- **`ifNotExists`** parameter on `create_backup` (default `false`). When `true`, the call returns the existing Backup's status instead of erroring on conflict. Closes part of [#42](https://github.com/setra06/mcp-cnpg-axians/issues/42).
 
 ### Added (internal)
 - New `src/s3.ts` module: SigV4-signed list-objects-v2 + DeleteObjects for S3-compatible endpoints. Pure HTTPS, no `@aws-sdk/*` dependency.
@@ -84,8 +84,8 @@ Tool count: 63 → 66.
 ## [3.2.0] - 2026-05-04
 
 ### Added
-- **`wait_for_*` helpers** in `src/tools/waits.ts`: `wait_for_cluster`, `wait_for_backup`, `wait_for_database`, `wait_for_pooler`. Server-side polling so consumers don't have to round-trip every poll through the MCP transport. `wait_for_cluster` accepts both a `phase` and a `readyInstances` lower bound (combinable). Closes [#34](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/34).
-- **`READ_ONLY` mode** (env var `READ_ONLY=true`). When set, the server filters its tool list at startup to exclude all mutating tools (matching `MUTATING_PREFIXES` from `src/types.ts`). Calls to mutating tools return a clear error explaining the mode. The new informational tool `get_server_mode` reports the current mode and the list of excluded tools. Closes [#38](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/38).
+- **`wait_for_*` helpers** in `src/tools/waits.ts`: `wait_for_cluster`, `wait_for_backup`, `wait_for_database`, `wait_for_pooler`. Server-side polling so consumers don't have to round-trip every poll through the MCP transport. `wait_for_cluster` accepts both a `phase` and a `readyInstances` lower bound (combinable). Closes [#34](https://github.com/setra06/mcp-cnpg-axians/issues/34).
+- **`READ_ONLY` mode** (env var `READ_ONLY=true`). When set, the server filters its tool list at startup to exclude all mutating tools (matching `MUTATING_PREFIXES` from `src/types.ts`). Calls to mutating tools return a clear error explaining the mode. The new informational tool `get_server_mode` reports the current mode and the list of excluded tools. Closes [#38](https://github.com/setra06/mcp-cnpg-axians/issues/38).
 - **`buildServerSurface(opts)`** exported from `src/index.ts`: builds the aggregated tool list and handler map without starting the MCP server. Used by tests; useful for embedding the server logic in other contexts.
 
 ### Changed
@@ -102,9 +102,9 @@ Tool count: 63 → 66.
 ## [3.1.0] - 2026-05-04
 
 ### Added
-- **`get_cluster_metrics`** now actually scrapes the CNPG Prometheus exporter (`:9187/metrics`) on each cluster pod via the K8s API server's `pods/proxy` subresource. Accepts `metricNames: string[]` to filter, `port` and `path` overrides, `podName` to limit scope. Closes [#36](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/36).
-- **`K8S_CA_CERT`** env var: pin the Kubernetes API server's CA when using the `K8S_API_URL` + `K8S_TOKEN` auth path. Accepts a file path, a base64-encoded PEM, or an inline PEM. Closes [#37](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/37).
-- **`formatK8sError(err)`** helper in `src/k8s.ts` and used by the dispatcher. Reduces the verbose `HTTP-Code: ... Body: "{\"kind\":\"Status\"...}" Headers: {...}` exception to a single line: e.g. `"422 Invalid: spec.imageName: can't downgrade from major 18 to 17"`. Closes [#40](https://github.com/cuspofaries/cnpg-axians-mcp-server/issues/40).
+- **`get_cluster_metrics`** now actually scrapes the CNPG Prometheus exporter (`:9187/metrics`) on each cluster pod via the K8s API server's `pods/proxy` subresource. Accepts `metricNames: string[]` to filter, `port` and `path` overrides, `podName` to limit scope. Closes [#36](https://github.com/setra06/mcp-cnpg-axians/issues/36).
+- **`K8S_CA_CERT`** env var: pin the Kubernetes API server's CA when using the `K8S_API_URL` + `K8S_TOKEN` auth path. Accepts a file path, a base64-encoded PEM, or an inline PEM. Closes [#37](https://github.com/setra06/mcp-cnpg-axians/issues/37).
+- **`formatK8sError(err)`** helper in `src/k8s.ts` and used by the dispatcher. Reduces the verbose `HTTP-Code: ... Body: "{\"kind\":\"Status\"...}" Headers: {...}` exception to a single line: e.g. `"422 Invalid: spec.imageName: can't downgrade from major 18 to 17"`. Closes [#40](https://github.com/setra06/mcp-cnpg-axians/issues/40).
 
 ### Changed
 - **`get_cluster_metrics`** has been renamed to **`get_cluster_pod_resources`** (the v3.0 implementation only returned pod-level resource info, not metrics). The new `get_cluster_metrics` (above) replaces it. Tool count: 53 → 54.
@@ -222,13 +222,13 @@ This release transforms the CNPG MCP Server from a basic cluster viewer into a c
 - Token-based authentication
 - Cross-namespace operations
 
-[3.6.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.5.0...v3.6.0
-[3.5.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.4.0...v3.5.0
-[3.4.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.3.0...v3.4.0
-[3.3.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.2.0...v3.3.0
-[3.2.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.1.0...v3.2.0
-[3.1.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.0.1...v3.1.0
-[3.0.1]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v3.0.0...v3.0.1
-[3.0.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v2.0.4...v3.0.0
-[2.0.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/compare/v1.0.0...v2.0.0
-[1.0.0]: https://github.com/cuspofaries/cnpg-axians-mcp-server/releases/tag/v1.0.0
+[3.6.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.5.0...v3.6.0
+[3.5.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.4.0...v3.5.0
+[3.4.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.3.0...v3.4.0
+[3.3.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.2.0...v3.3.0
+[3.2.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.0.1...v3.1.0
+[3.0.1]: https://github.com/setra06/mcp-cnpg-axians/compare/v3.0.0...v3.0.1
+[3.0.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v2.0.4...v3.0.0
+[2.0.0]: https://github.com/setra06/mcp-cnpg-axians/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/setra06/mcp-cnpg-axians/releases/tag/v1.0.0

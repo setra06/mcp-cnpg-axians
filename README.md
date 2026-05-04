@@ -37,7 +37,7 @@ Add this to your claude_desktop_config.json:
   "mcpServers": {
     "cnpg": {
       "command": "npx",
-      "args": ["@cuspofaries/axians-mcp-cnpg-server"],
+      "args": ["@setra06/mcp-cnpg-axians"],
       "env": {
         "K8S_API_URL": "https://your-k8s-api-server.com",
         "K8S_TOKEN": "your_bearer_token_here"
@@ -125,7 +125,7 @@ The full per-tool schema is exposed by the standard MCP `list_tools` capability 
 
 ```bash
 # Test the server locally
-npx @cuspofaries/axians-mcp-cnpg-server
+npx @setra06/mcp-cnpg-axians
 ```
 
 ### Advanced Configuration
@@ -135,7 +135,7 @@ npx @cuspofaries/axians-mcp-cnpg-server
   "mcpServers": {
     "cnpg-production": {
       "command": "npx",
-      "args": ["@cuspofaries/axians-mcp-cnpg-server"],
+      "args": ["@setra06/mcp-cnpg-axians"],
       "env": {
         "K8S_API_URL": "https://prod-k8s.company.com",
         "K8S_TOKEN": "prod_token_here"
@@ -143,7 +143,7 @@ npx @cuspofaries/axians-mcp-cnpg-server
     },
     "cnpg-staging": {
       "command": "npx", 
-      "args": ["@cuspofaries/axians-mcp-cnpg-server"],
+      "args": ["@setra06/mcp-cnpg-axians"],
       "env": {
         "K8S_API_URL": "https://staging-k8s.company.com",
         "K8S_TOKEN": "staging_token_here"
@@ -244,8 +244,8 @@ rules:
 ## Development
 
 ```bash
-git clone https://github.com/cuspofaries/cnpg-axians-mcp-server.git
-cd cnpg-axians-mcp-server
+git clone https://github.com/setra06/mcp-cnpg-axians.git
+cd mcp-cnpg-axians
 npm install
 npm run build
 npm start
@@ -269,12 +269,12 @@ This project is developed by Axians, a VINCI Energies brand, specializing in ICT
 
 ## Support
 
-- Report Issues: https://github.com/cuspofaries/cnpg-axians-mcp-server/issues
-- Discussions: https://github.com/cuspofaries/cnpg-axians-mcp-server/discussions
+- Report Issues: https://github.com/setra06/mcp-cnpg-axians/issues
+- Discussions: https://github.com/setra06/mcp-cnpg-axians/discussions
 - Email: anthony.macle@axians.com
 
 ## License
 
 MIT
 
-[![MCP Badge](https://lobehub.com/badge/mcp/cuspofaries-cnpg-axians-mcp-server)](https://lobehub.com/mcp/cuspofaries-cnpg-axians-mcp-server)
+[![MCP Badge](https://lobehub.com/badge/mcp/setra06-mcp-cnpg-axians)](https://lobehub.com/mcp/setra06-mcp-cnpg-axians)
