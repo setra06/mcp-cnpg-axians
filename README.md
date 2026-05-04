@@ -1,8 +1,8 @@
-# CloudNativePG MCP Server by Axians
+# CloudNativePG MCP Server by Axians Data Management
 
 A Model Context Protocol (MCP) server for managing CloudNativePG PostgreSQL clusters through Claude Code, Claude Desktop, and other MCP clients.
 
-Developed by Axians for the Kubernetes and PostgreSQL community.
+Developed by Axians Data Management for the Kubernetes and PostgreSQL community.
 
 ## Features
 
@@ -261,15 +261,15 @@ KUBECONFIG=~/.kube/config TEST_NAMESPACE=cnpg-mcp-test TEST_CLUSTER=mcptest npm 
 
 We welcome contributions! Please see our Contributing Guide.
 
-## About Axians
+## About Axians Data Management
 
-This project is developed by Axians, a VINCI Energies brand, specializing in ICT solutions and services.
+This project is developed by Axians Data Management, part of Axians (a VINCI Energies brand), specializing in ICT solutions and services.
 
 ## Support
 
 - Report Issues: https://github.com/setra06/mcp-cnpg-axians/issues
 - Discussions: https://github.com/setra06/mcp-cnpg-axians/discussions
-- Email: anthony.macle@axians.com
+- Email: support-database@axians.com
 
 ## License
 
