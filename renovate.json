@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "security:openssf-scorecard"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "osvVulnerabilityAlerts": true,
+  "npm": {
+    "transitiveRemediation": true
+  },
+  "packageRules": [
+    {
+      "description": "Enable vulnerability alerts for all packages",
+      "matchPackagePatterns": ["*"],
+      "vulnerabilityAlerts": {
+        "enabled": true
+      }
+    },
+    {
+      "description": "Auto-merge security patches",
+      "matchUpdateTypes": ["patch"],
+      "matchPackagePatterns": ["*"],
+      "automerge": true,
+      "automergeType": "pr"
+    }
+  ],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 5
+}
