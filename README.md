@@ -270,6 +270,103 @@ rules:
   verbs: ["get", "list", "watch"]
 ```
 
+## Docker / Kubernetes deployment
+
+A pre-built multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub Container Registry on every release. Use it whenever you need to run the server inside Kubernetes — typically alongside [kagent](https://github.com/kagent-dev/kagent) / kmcp — instead of relying on `npx`.
+
+```bash
+docker pull ghcr.io/setra06/mcp-cnpg-axians:latest
+# Or pin to an exact release:
+docker pull ghcr.io/setra06/mcp-cnpg-axians:1.0.1
+```
+
+Tags published:
+
+- `:latest` and `:X.Y.Z` / `:X.Y` / `:X` — release tags (push of `vX.Y.Z`)
+- `:edge` — every commit on `main`
+
+> **Why a container image instead of `npx -y`?** npm 11.6.x has a regression in `npm exec` / `npx` where it fetches package metadata then exits silently without installing or launching the binary. The image bypasses that path entirely — `node:22-alpine` ships npm 10.x, deps are pre-installed at build time, and the entrypoint is a direct `node dist/index.js`.
+
+### Running the image
+
+The container is configured by the same environment variables as the npm package — see the [Configuration](#configuration) table for `K8S_API_URL`, `K8S_TOKEN`, `K8S_CA_CERT`, `READ_ONLY`, `K8S_CONTEXTS`, and the `TRANSPORT=http` family (`MCP_HTTP_HOST`, `MCP_HTTP_PORT`, `MCP_HTTP_PATH`, `MCP_HTTP_TOKEN`).
+
+Quick stdio sanity check (the server expects a JSON-RPC line on stdin):
+
+```bash
+docker run --rm -i \
+  -e K8S_API_URL=https://your-k8s-api-server.com \
+  -e K8S_TOKEN=your_bearer_token \
+  ghcr.io/setra06/mcp-cnpg-axians:latest
+```
+
+### Deploying with kagent (MCPServer CR, stdio)
+
+The most common deployment pattern is a kagent `MCPServer` that spawns the image in stdio mode. The pod's ServiceAccount carries the RBAC needed to talk to the CNPG API; no `K8S_TOKEN` is required when running in-cluster (the operator falls back to the pod's projected SA token).
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cnpg-mcp-server
+  namespace: kagent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cnpg-mcp-manager
+rules:
+- apiGroups: ["postgresql.cnpg.io"]
+  resources:
+    - clusters
+    - backups
+    - scheduledbackups
+    - poolers
+    - databases
+    - publications
+    - subscriptions
+    - imagecatalogs
+    - clusterimagecatalogs
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "services", "secrets", "events", "namespaces", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cnpg-mcp-server-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cnpg-mcp-manager
+subjects:
+- kind: ServiceAccount
+  name: cnpg-mcp-server
+  namespace: kagent
+---
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: cnpg
+  namespace: kagent
+spec:
+  serviceAccountName: cnpg-mcp-server
+  transport: stdio
+  image: ghcr.io/setra06/mcp-cnpg-axians:latest
+  env:
+    - name: K8S_API_URL
+      value: https://kubernetes.default.svc
+    - name: K8S_CA_CERT
+      value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    # K8S_TOKEN is auto-resolved from the projected SA token at /var/run/secrets/...
+    # If your image build does not auto-detect it, mount and read it explicitly.
+    - name: READ_ONLY
+      value: "false"
+```
+
+If you'd rather expose the server over HTTP (e.g. for an out-of-cluster client), flip `transport: http` (or run the image as a regular `Deployment` + `Service`), set `TRANSPORT=http`, `MCP_HTTP_HOST=0.0.0.0`, `MCP_HTTP_TOKEN=<token>`, and publish port `3000`.
+
 ## Development
 
 ```bash
