@@ -61,6 +61,37 @@ Add this to your claude_desktop_config.json:
 | `K8S_SKIP_TLS_VERIFY` | Set to `true` to disable TLS verification (lab self-signed clusters only). **Default: `false` since v3.1.0.** | No |
 | `READ_ONLY` | Set to `true` to filter all mutating tools from the server's surface at startup. The remaining read-only tools and the `get_server_mode` tool are exposed. Pairs naturally with the `cnpg-mcp-reader` ClusterRole. | No |
 | `K8S_CONTEXTS` | JSON array of context descriptors for multi-cluster mode. Example: `[{"name":"prod","apiUrl":"https://prod","tokenEnv":"PROD_TOKEN","caCertEnv":"PROD_CA"},{"name":"staging","kubeconfigPath":"/etc/staging.kubeconfig"}]`. When set, every tool accepts an optional `context: string` arg; `list_contexts` enumerates them. When unset, single-context fallback uses `K8S_API_URL`/`K8S_TOKEN`/`K8S_CA_CERT` (or default kubeconfig). | No |
+| `TRANSPORT` | `stdio` (default) or `http`. Selects the MCP transport at startup. | No |
+| `MCP_HTTP_HOST` | Bind address for HTTP transport. Default `127.0.0.1`. Set to `0.0.0.0` to expose the server outside localhost. | No |
+| `MCP_HTTP_PORT` | TCP port for HTTP transport. Default `3000`. | No |
+| `MCP_HTTP_PATH` | URL path served by the HTTP transport. Default `/mcp`. | No |
+| `MCP_HTTP_TOKEN` | When set, every HTTP request must carry `Authorization: Bearer <token>`. Compared with constant time. When unset, the endpoint is open — only use that behind a trusted reverse proxy or on a private network. | No |
+
+### HTTP transport
+
+The server also speaks the official MCP **Streamable HTTP** transport (single endpoint, stateful sessions). Useful for sidecar deployments inside Kubernetes, agentic IDE plugins, or any client that can't spawn a subprocess.
+
+```bash
+TRANSPORT=http \
+MCP_HTTP_HOST=0.0.0.0 \
+MCP_HTTP_PORT=3000 \
+MCP_HTTP_TOKEN=$(openssl rand -hex 32) \
+K8S_API_URL=https://your-k8s-api-server.com \
+K8S_TOKEN=your_bearer_token \
+npx @setra06/mcp-cnpg-axians
+```
+
+The server exposes one endpoint at `MCP_HTTP_PATH` (default `/mcp`):
+
+- `POST /mcp` — JSON-RPC requests. The first call must be `initialize`; the response sets a `Mcp-Session-Id` header. Subsequent calls must echo that header back.
+- `GET /mcp` — opens an SSE stream for server-initiated notifications on the current session.
+- `DELETE /mcp` — terminates the session.
+
+Each session runs its own `Server` instance, so concurrent clients are isolated. Sessions are kept in memory only — restart the process and clients must re-`initialize`.
+
+#### Claude Desktop / mcp-inspector / custom clients
+
+For clients that support remote MCP servers, point them at `http(s)://<host>:<port>/mcp` and pass the bearer token in `Authorization: Bearer <MCP_HTTP_TOKEN>`. For clients that only support stdio (older Claude Desktop builds), keep `TRANSPORT=stdio` and use the existing `command: npx` config.
 
 ### Getting a Bearer Token
 

@@ -143,83 +143,118 @@ export function buildServerSurface(opts: { readOnly: boolean; version: string; c
   return { tools, handlers, excludedMutating };
 }
 
-class CNPGMCPServer {
-  private server: Server;
-  private contexts: ContextRegistry;
-  private tools: Tool[];
-  private handlers: Record<string, ToolHandler>;
-  private readOnly: boolean;
-  private excludedMutating: string[];
+export const SERVER_NAME = 'cnpg-mcp-server';
+export { SERVER_VERSION };
 
-  constructor() {
-    this.readOnly = process.env.READ_ONLY === 'true';
-    this.contexts = ContextRegistry.fromEnv();
-    const surface = buildServerSurface({
-      readOnly: this.readOnly,
-      version: SERVER_VERSION,
-      contexts: this.contexts,
-    });
-    this.tools = surface.tools;
-    this.handlers = surface.handlers;
-    this.excludedMutating = surface.excludedMutating;
+/**
+ * Runtime shared by every transport: the tool surface, the readOnly flag, the
+ * configured context registry. Built once at startup; the same instance is reused
+ * for every stdio call or every HTTP session.
+ */
+export interface ServerRuntime {
+  readOnly: boolean;
+  contexts: ContextRegistry;
+  tools: Tool[];
+  handlers: Record<string, ToolHandler>;
+  excludedMutating: string[];
+}
 
-    this.server = new Server(
-      { name: 'cnpg-mcp-server', version: SERVER_VERSION },
-      { capabilities: { tools: {} } },
-    );
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: this.tools,
-    }));
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
-      const handler = this.handlers[name];
-      if (!handler) {
-        if (this.readOnly && this.excludedMutating.includes(name)) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Tool "${name}" is a mutating operation and has been excluded by READ_ONLY mode. Set READ_ONLY=false to enable.`,
-              },
-            ],
-            isError: true,
-          };
-        }
+export function buildRuntime(): ServerRuntime {
+  const readOnly = process.env.READ_ONLY === 'true';
+  const contexts = ContextRegistry.fromEnv();
+  const surface = buildServerSurface({ readOnly, version: SERVER_VERSION, contexts });
+  return {
+    readOnly,
+    contexts,
+    tools: surface.tools,
+    handlers: surface.handlers,
+    excludedMutating: surface.excludedMutating,
+  };
+}
+
+/**
+ * Build a fresh MCP `Server` instance wired against the shared runtime. Each HTTP
+ * session creates its own Server (so per-session state stays isolated); stdio uses
+ * a single one. The Server itself is stateless wrt the runtime — all state lives
+ * on the transport.
+ */
+export function createMcpServer(runtime: ServerRuntime): Server {
+  const server = new Server(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { capabilities: { tools: {} } },
+  );
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: runtime.tools }));
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    const handler = runtime.handlers[name];
+    if (!handler) {
+      if (runtime.readOnly && runtime.excludedMutating.includes(name)) {
         return {
-          content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+          content: [
+            {
+              type: 'text',
+              text: `Tool "${name}" is a mutating operation and has been excluded by READ_ONLY mode. Set READ_ONLY=false to enable.`,
+            },
+          ],
           isError: true,
         };
       }
-      try {
-        // Resolve the K8sClients for this call's context (or the default).
-        const ctxName: string | undefined = (args as any)?.context;
-        const k8s: K8sClients = this.contexts.resolve(ctxName);
-        // Pass the handler args minus the `context` key so handlers don't need to know about it.
-        const cleaned: Record<string, any> = { ...(args ?? {}) };
-        delete cleaned.context;
-        return await handler(cleaned, k8s);
-      } catch (error) {
-        return {
-          content: [{ type: 'text', text: `Error executing ${name}: ${formatK8sError(error)}` }],
-          isError: true,
-        };
-      }
-    });
-  }
+      return {
+        content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+        isError: true,
+      };
+    }
+    try {
+      const ctxName: string | undefined = (args as any)?.context;
+      const k8s: K8sClients = runtime.contexts.resolve(ctxName);
+      const cleaned: Record<string, any> = { ...(args ?? {}) };
+      delete cleaned.context;
+      return await handler(cleaned, k8s);
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error executing ${name}: ${formatK8sError(error)}` }],
+        isError: true,
+      };
+    }
+  });
+  return server;
+}
 
-  async run() {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-    const modeStr = this.readOnly
-      ? `READ-ONLY (${this.excludedMutating.length} mutating tools excluded)`
-      : 'full';
-    const ctxStr = this.contexts.multiContext
-      ? `multi-context [${this.contexts.contextNames().join(', ')}], default=${this.contexts.defaultContext()}`
-      : `single-context (${this.contexts.defaultContext()})`;
-    console.error(
-      `CloudNativePG MCP server v${SERVER_VERSION} running on stdio (${this.tools.length} tools, mode=${modeStr}, ${ctxStr})`,
-    );
+function describeMode(runtime: ServerRuntime): string {
+  const modeStr = runtime.readOnly
+    ? `READ-ONLY (${runtime.excludedMutating.length} mutating tools excluded)`
+    : 'full';
+  const ctxStr = runtime.contexts.multiContext
+    ? `multi-context [${runtime.contexts.contextNames().join(', ')}], default=${runtime.contexts.defaultContext()}`
+    : `single-context (${runtime.contexts.defaultContext()})`;
+  return `${runtime.tools.length} tools, mode=${modeStr}, ${ctxStr}`;
+}
+
+async function runStdio(runtime: ServerRuntime): Promise<void> {
+  const server = createMcpServer(runtime);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error(
+    `CloudNativePG MCP server v${SERVER_VERSION} running on stdio (${describeMode(runtime)})`,
+  );
+}
+
+async function runHttp(runtime: ServerRuntime): Promise<void> {
+  // Dynamic import: avoids loading the HTTP transport (and the `node:http` cost) when
+  // running in stdio mode, and sidesteps a circular import between index.ts and http.ts.
+  const { startHttpServer } = await import('./http.js');
+  const host = process.env.MCP_HTTP_HOST || '127.0.0.1';
+  const port = Number(process.env.MCP_HTTP_PORT || '3000');
+  const token = process.env.MCP_HTTP_TOKEN || undefined;
+  const path = process.env.MCP_HTTP_PATH || '/mcp';
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid MCP_HTTP_PORT: ${process.env.MCP_HTTP_PORT}`);
   }
+  await startHttpServer(runtime, { host, port, token, path });
+  console.error(
+    `CloudNativePG MCP server v${SERVER_VERSION} running on http://${host}:${port}${path} ` +
+      `(${describeMode(runtime)}, auth=${token ? 'bearer' : 'none'})`,
+  );
 }
 
 // Start the server only when this file is the entrypoint. Importing it from a test file
@@ -236,8 +271,15 @@ const isMainEntry = (() => {
 })();
 
 if (isMainEntry) {
-  const server = new CNPGMCPServer();
-  server.run().catch((e) => {
+  const transportName = (process.env.TRANSPORT || 'stdio').toLowerCase();
+  const runtime = buildRuntime();
+  const runner =
+    transportName === 'http'
+      ? runHttp(runtime)
+      : transportName === 'stdio'
+        ? runStdio(runtime)
+        : Promise.reject(new Error(`Unknown TRANSPORT=${process.env.TRANSPORT}. Use "stdio" or "http".`));
+  runner.catch((e) => {
     console.error('Fatal:', e);
     process.exit(1);
   });
