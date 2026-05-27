@@ -101,6 +101,156 @@ kubectl create serviceaccount cnpg-mcp
 kubectl get secret $(kubectl get sa cnpg-mcp -o jsonpath='{.secrets[0].name}') -o jsonpath='{.data.token}' | base64 -d
 ```
 
+## Container image
+
+A pre-built multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub Container Registry on every release. Use it whenever you need to run the server inside Kubernetes instead of relying on `npx`.
+
+```bash
+docker pull ghcr.io/setra06/mcp-cnpg-axians:latest
+# Or pin to an exact release:
+docker pull ghcr.io/setra06/mcp-cnpg-axians:1.0.1
+```
+
+Tags published:
+
+- `:latest` and `:X.Y.Z` / `:X.Y` / `:X` — release tags (push of `vX.Y.Z`)
+- `:edge` — every commit on `main`
+
+> **Why a container image instead of `npx -y`?** npm 11.6.x has a regression in `npm exec` / `npx` where it fetches package metadata then exits silently without installing or launching the binary. The image bypasses that path entirely — `node:22-alpine` ships npm 10.x, deps are pre-installed at build time, and the entrypoint is a direct `node dist/index.js`.
+
+The container is configured by the same environment variables as the npm package — see the [Configuration](#configuration) table. Quick stdio sanity check:
+
+```bash
+docker run --rm -i \
+  -e K8S_API_URL=https://your-k8s-api-server.com \
+  -e K8S_TOKEN=your_bearer_token \
+  ghcr.io/setra06/mcp-cnpg-axians:latest
+```
+
+## Deploy on Kubernetes (kagent)
+
+The repository ships ready-to-apply manifests under [`deploy/kagent/`](deploy/kagent/) that deploy this MCP server as a kagent [`MCPServer`](https://kagent.dev) custom resource — exposed as an HTTP tool server for in-cluster AI agents.
+
+### Prerequisites
+
+- A Kubernetes cluster (1.24+) with [kagent](https://kagent.dev) installed (provides the `kagent.dev/v1alpha1` `MCPServer` CRD and controller).
+- Pull access to `ghcr.io/setra06/mcp-cnpg-axians` (see [Private vs public image](#private-vs-public-image)).
+- `kubectl` configured against the target cluster.
+
+### Quick start
+
+```bash
+git clone https://github.com/setra06/mcp-cnpg-axians.git
+cd mcp-cnpg-axians/deploy/kagent
+./install.sh
+```
+
+The script applies RBAC, mints the SA token, injects it into the `MCPServer` CR, waits for the pod to become Ready, and probes `POST /mcp` to confirm the server responds. Override defaults with `NAMESPACE=...` / `MCP_NAME=...`. Remove everything with `./uninstall.sh`.
+
+### Architecture
+
+kagent runs each `MCPServer` as a pod with two containers: an **agentgateway** sidecar (Rust, port 3000) that exposes the official Streamable HTTP transport, and the MCP server itself (here, `node dist/index.js`) which the gateway speaks to over stdio.
+
+```
+   AI agent / kagent controller         Pod (managed by kagent MCPServer CR)
+   ────────────────────────────         ─────────────────────────────────────
+                                        ┌─────────────────────┐
+                                        │   agentgateway      │  HTTP /mcp on :3000
+   HTTP POST /mcp  ─────────────────▶   │   (Rust sidecar)    │  ◀── exposed via
+                                        └──────────┬──────────┘     ClusterIP svc
+                                                   │ stdio
+                                        ┌──────────▼──────────┐
+                                        │   node dist/index.js │  this repo, 67 tools
+                                        └──────────┬──────────┘
+                                                   │ K8s API (CNPG CRDs)
+                                                   ▼
+                                             CloudNativePG
+```
+
+### MCPServer fields
+
+| Field | Value | Notes |
+|---|---|---|
+| `spec.transportType` | `stdio` | kagent talks stdio to the container ↔ exposes HTTP outward. Do **not** set `TRANSPORT=http` here — the gateway handles HTTP. |
+| `spec.deployment.image` | `ghcr.io/setra06/mcp-cnpg-axians:main` | Pin to a semver tag in prod (`:v1.0.1`). |
+| `spec.deployment.cmd` / `args` | `node` / `["dist/index.js"]` | Direct exec form — no shell, signals propagate. |
+| `spec.deployment.port` | `3000` | Port the agentgateway listens on. |
+| `spec.deployment.env.K8S_API_URL` | `https://kubernetes.default.svc` | In-cluster API endpoint. |
+| `spec.deployment.env.K8S_CA_CERT` | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` | Auto-mounted by the projected SA volume. |
+| `spec.deployment.env.K8S_TOKEN` | (injected by `install.sh`) | JWT of the `cnpg-mcp-server` SA. |
+| `spec.timeout` | `30s` | Per-request timeout the gateway enforces upstream. |
+
+### In-cluster Kubernetes authentication
+
+Three values together cover in-cluster auth:
+
+1. `K8S_API_URL=https://kubernetes.default.svc` — the API server's well-known DNS name inside any pod.
+2. `K8S_CA_CERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` — the projected CA bundle, mounted on every pod that has a SA.
+3. `K8S_TOKEN=<JWT>` — the JWT of the `cnpg-mcp-server` ServiceAccount, sourced from the `cnpg-mcp-server-token` Secret. `install.sh` injects it into the CR at install time.
+
+The MCP server reads these from the environment and uses them to build an out-of-cluster-style client even when running inside the pod — this keeps the auth path identical between local dev and in-cluster deployments and lets RBAC changes take effect by re-running `install.sh`.
+
+### Private vs public image
+
+A package published to GHCR from a public repo is **not** public by default — visibility is set per-package, not inherited from the repo. Two options:
+
+**(a) Make the package public** (one-time):
+
+1. Go to `https://github.com/users/setra06/packages/container/mcp-cnpg-axians`
+2. Package settings → Change visibility → Public.
+
+**(b) Pull from a private registry** with a docker-registry Secret:
+
+```bash
+kubectl create secret docker-registry ghcr-pull \
+  --namespace kagent \
+  --docker-server=ghcr.io \
+  --docker-username=<github-username> \
+  --docker-password=<PAT with read:packages scope>
+
+kubectl patch serviceaccount cnpg-mcp-server -n kagent \
+  -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
+```
+
+### Troubleshooting
+
+- **`connection refused 10.x.x.x:3000` in `kagent-controller` logs** — the controller raced ahead of pod startup. Force a reconcile:
+  ```bash
+  kubectl annotate mcpserver setra06-mcp-cnpg-axians -n kagent \
+    "kagent.dev/reconcile-trigger=$(date +%s)" --overwrite
+  ```
+
+- **`POST /mcp` returns 30s timeout when the deployment uses `cmd: ["npx", "-y", "@setra06/mcp-cnpg-axians"]`** — known npm 11.6.x regression in `npm exec` / `npx`: the metadata fetch completes, then npm exits silently without installing or launching the binary. The pre-built image bypasses this entirely. Do **not** build a DIY image based on `node:24` with `cmd: ["npx", "-y", ...]` — it will hang on every cold start. Use the published image (or build your own from `node:22-alpine` with the package pre-installed).
+
+- **`ImagePullBackOff` with `401 Unauthorized`** — the GHCR package is still private. Either make it public or attach an image-pull Secret (see [Private vs public image](#private-vs-public-image)).
+
+- **`POST /mcp` returns 400 `Bad Request: missing session ID`** — every call after `initialize` must echo back the `Mcp-Session-Id` header. The install probe handles this; client-side bugs in third-party MCP clients sometimes don't.
+
+### Post-deployment verification
+
+```bash
+kubectl get mcpserver setra06-mcp-cnpg-axians -n kagent \
+  -o jsonpath='{.status.conditions}' | jq .
+
+POD=$(kubectl get pod -n kagent \
+  -l app.kubernetes.io/instance=setra06-mcp-cnpg-axians \
+  -o name | head -1)
+kubectl logs -n kagent "$POD" -c mcp-server --tail=30
+```
+
+The MCP container should print on startup:
+
+```
+CloudNativePG MCP server v3.6.0 running on stdio (67 tools, mode=full, single-context (default))
+```
+
+### Hardening for production
+
+- **Pin the image** to a semver tag (`:v1.0.1`), not `:main`. The latter rolls forward on every commit to `main`.
+- **Run read-only when possible** — apply `cnpg-mcp-reader` instead of `cnpg-mcp-manager` (swap `roleRef.name` in `deploy/kagent/rbac.yaml`) AND set `env.READ_ONLY: "true"` on the MCPServer. RBAC is the real boundary; `READ_ONLY` is a second layer that filters the surface clients see.
+- **`K8S_TOKEN` ends up in cleartext on the MCPServer CR** because kagent's CRD does not currently accept `secretKeyRef` on `spec.deployment.env`. Restrict `get`/`list`/`watch` on `mcpservers.kagent.dev` in the `kagent` namespace via RBAC, and audit who can `kubectl get mcpserver -o yaml`.
+- **Add a NetworkPolicy** that only allows ingress to the MCPServer pod from kagent's own controller and agent pods. The pod holds cluster-wide RBAC against the CNPG CRDs; a leaked HTTP endpoint is a serious attack surface.
+
 ## Available Tools (67)
 
 ### Cluster lifecycle (`src/tools/clusters.ts`)
@@ -192,180 +342,7 @@ npx @setra06/mcp-cnpg-axians
 
 ### Required RBAC
 
-Full functionality (covers Database/Publication/Subscription/ImageCatalog CRDs added in v3.0):
-
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: cnpg-mcp-server
-  namespace: default
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: cnpg-mcp-manager
-rules:
-- apiGroups: ["postgresql.cnpg.io"]
-  resources:
-    - clusters
-    - backups
-    - scheduledbackups
-    - poolers
-    - databases
-    - publications
-    - subscriptions
-    - imagecatalogs
-    - clusterimagecatalogs
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: [""]
-  resources: ["pods", "pods/log", "services", "secrets", "events", "namespaces", "persistentvolumeclaims"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: cnpg-mcp-server-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cnpg-mcp-manager
-subjects:
-- kind: ServiceAccount
-  name: cnpg-mcp-server
-  namespace: default
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cnpg-mcp-server-token
-  namespace: default
-  annotations:
-    kubernetes.io/service-account.name: cnpg-mcp-server
-type: kubernetes.io/service-account-token
-```
-
-Read-only:
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: cnpg-mcp-reader
-rules:
-- apiGroups: ["postgresql.cnpg.io"]
-  resources:
-    - clusters
-    - backups
-    - scheduledbackups
-    - poolers
-    - databases
-    - publications
-    - subscriptions
-    - imagecatalogs
-    - clusterimagecatalogs
-  verbs: ["get", "list", "watch"]
-- apiGroups: [""]
-  resources: ["pods", "pods/log", "services", "secrets", "events", "namespaces"]
-  verbs: ["get", "list", "watch"]
-```
-
-## Docker / Kubernetes deployment
-
-A pre-built multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub Container Registry on every release. Use it whenever you need to run the server inside Kubernetes — typically alongside [kagent](https://github.com/kagent-dev/kagent) / kmcp — instead of relying on `npx`.
-
-```bash
-docker pull ghcr.io/setra06/mcp-cnpg-axians:latest
-# Or pin to an exact release:
-docker pull ghcr.io/setra06/mcp-cnpg-axians:1.0.1
-```
-
-Tags published:
-
-- `:latest` and `:X.Y.Z` / `:X.Y` / `:X` — release tags (push of `vX.Y.Z`)
-- `:edge` — every commit on `main`
-
-> **Why a container image instead of `npx -y`?** npm 11.6.x has a regression in `npm exec` / `npx` where it fetches package metadata then exits silently without installing or launching the binary. The image bypasses that path entirely — `node:22-alpine` ships npm 10.x, deps are pre-installed at build time, and the entrypoint is a direct `node dist/index.js`.
-
-### Running the image
-
-The container is configured by the same environment variables as the npm package — see the [Configuration](#configuration) table for `K8S_API_URL`, `K8S_TOKEN`, `K8S_CA_CERT`, `READ_ONLY`, `K8S_CONTEXTS`, and the `TRANSPORT=http` family (`MCP_HTTP_HOST`, `MCP_HTTP_PORT`, `MCP_HTTP_PATH`, `MCP_HTTP_TOKEN`).
-
-Quick stdio sanity check (the server expects a JSON-RPC line on stdin):
-
-```bash
-docker run --rm -i \
-  -e K8S_API_URL=https://your-k8s-api-server.com \
-  -e K8S_TOKEN=your_bearer_token \
-  ghcr.io/setra06/mcp-cnpg-axians:latest
-```
-
-### Deploying with kagent (MCPServer CR, stdio)
-
-The most common deployment pattern is a kagent `MCPServer` that spawns the image in stdio mode. The pod's ServiceAccount carries the RBAC needed to talk to the CNPG API; no `K8S_TOKEN` is required when running in-cluster (the operator falls back to the pod's projected SA token).
-
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: cnpg-mcp-server
-  namespace: kagent
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: cnpg-mcp-manager
-rules:
-- apiGroups: ["postgresql.cnpg.io"]
-  resources:
-    - clusters
-    - backups
-    - scheduledbackups
-    - poolers
-    - databases
-    - publications
-    - subscriptions
-    - imagecatalogs
-    - clusterimagecatalogs
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: [""]
-  resources: ["pods", "pods/log", "services", "secrets", "events", "namespaces", "persistentvolumeclaims"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: cnpg-mcp-server-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cnpg-mcp-manager
-subjects:
-- kind: ServiceAccount
-  name: cnpg-mcp-server
-  namespace: kagent
----
-apiVersion: kagent.dev/v1alpha1
-kind: MCPServer
-metadata:
-  name: cnpg
-  namespace: kagent
-spec:
-  serviceAccountName: cnpg-mcp-server
-  transport: stdio
-  image: ghcr.io/setra06/mcp-cnpg-axians:latest
-  env:
-    - name: K8S_API_URL
-      value: https://kubernetes.default.svc
-    - name: K8S_CA_CERT
-      value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-    # K8S_TOKEN is auto-resolved from the projected SA token at /var/run/secrets/...
-    # If your image build does not auto-detect it, mount and read it explicitly.
-    - name: READ_ONLY
-      value: "false"
-```
-
-If you'd rather expose the server over HTTP (e.g. for an out-of-cluster client), flip `transport: http` (or run the image as a regular `Deployment` + `Service`), set `TRANSPORT=http`, `MCP_HTTP_HOST=0.0.0.0`, `MCP_HTTP_TOKEN=<token>`, and publish port `3000`.
+Ready-to-apply manifests live in [`deploy/kagent/rbac.yaml`](deploy/kagent/rbac.yaml). They define a `ServiceAccount`, two `ClusterRole`s (`cnpg-mcp-manager` for full read/write on CNPG CRDs, `cnpg-mcp-reader` for read-only), a `ClusterRoleBinding`, and a static SA token `Secret`. Default namespace is `kagent` to match the [kagent deployment story](#deploy-on-kubernetes-kagent) — change the `namespace:` fields and the `ClusterRoleBinding`'s `subjects[0].namespace` if you deploy elsewhere.
 
 ## Development
 

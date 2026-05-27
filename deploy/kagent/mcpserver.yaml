@@ -1,0 +1,39 @@
+# kagent MCPServer CR for the CloudNativePG MCP server.
+#
+# The K8S_TOKEN below is a literal placeholder. Do NOT `kubectl apply` this file
+# as-is — run `./install.sh` which:
+#   1. applies rbac.yaml,
+#   2. reads the JWT from the cnpg-mcp-server-token Secret,
+#   3. substitutes <INJECTÉ_VIA_SCRIPT> with that JWT,
+#   4. applies the rendered manifest.
+#
+# In production, pin `deployment.image` to a semver tag (e.g. :v1.0.1) instead
+# of :main, and set READ_ONLY=true when the agent does not need to mutate
+# clusters (RBAC will already restrict it; the env var is a second layer).
+---
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: setra06-mcp-cnpg-axians
+  namespace: kagent
+spec:
+  transportType: stdio
+  stdioTransport: {}
+  timeout: 30s
+  deployment:
+    # Pin to a semver tag in prod (:v1.0.1, :v1.0.2, ...). :main rolls forward
+    # on every commit on the main branch.
+    image: ghcr.io/setra06/mcp-cnpg-axians:main
+    cmd: node
+    args:
+      - dist/index.js
+    port: 3000
+    replicas: 1
+    env:
+      K8S_API_URL: https://kubernetes.default.svc
+      K8S_CA_CERT: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      # Replaced by install.sh with the JWT read from cnpg-mcp-server-token.
+      # Caveat: kagent's MCPServer CRD does not currently support secretKeyRef
+      # under spec.deployment.env, so the token ends up in cleartext on the CR.
+      # Restrict access to mcpservers.kagent.dev via RBAC in this namespace.
+      K8S_TOKEN: "<INJECTÉ_VIA_SCRIPT>"
