@@ -34,7 +34,11 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # GHCR_PAT must be a classic PAT with `write:packages` (+ `read:packages`).
+          # The default GITHUB_TOKEN was failing 403 on first-push to GHCR under
+          # the `setra06` namespace even with repo-level `packages: write` and
+          # "Read and write permissions" on the repo's Actions settings.
+          password: ${{ secrets.GHCR_PAT }}
 
       - name: Extract Docker metadata
         id: meta
