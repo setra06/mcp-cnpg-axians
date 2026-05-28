@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-05-27
+
+### Added
+- **Native HTTP transport** alongside stdio. Set `TRANSPORT=http` to expose the official MCP Streamable HTTP transport (single endpoint, stateful sessions via `Mcp-Session-Id`). Configurable host/port/path; optional `MCP_HTTP_TOKEN` bearer auth (constant-time check). Stdio remains the default; existing Claude Desktop configs keep working.
+- **Container image** published to `ghcr.io/setra06/mcp-cnpg-axians` (multi-arch `linux/amd64` + `linux/arm64`). `node:22-alpine` base (npm 10.x avoids the npm 11.6.x `npx -y` regression), multi-stage build, `USER node`, exec-form `ENTRYPOINT` for clean SIGTERM. GitHub Actions workflow publishes `:edge` on `main`, `:X.Y.Z` + `:latest` on `vX.Y.Z` tags.
+- **kagent deployment manifests** under `deploy/kagent/` (RBAC, MCPServer CR, install/uninstall scripts) and a dedicated "Deploy on Kubernetes (kagent)" README section covering architecture, in-cluster auth, public/private GHCR image handling, and four known failure modes (reconcile timing, npm 11.6.x npx hang, ImagePullBackOff, session-id handling).
+
+### Changed
+- README restructured: new top-level "Container image" and "Deploy on Kubernetes (kagent)" sections; the Troubleshooting "Required RBAC" subsection is now a pointer to `deploy/kagent/rbac.yaml` (single source of truth).
+
 ## [1.0.0] - 2026-05-04
 
 Initial release of `@setra06/mcp-cnpg-axians` — an MCP server for managing CloudNativePG (CNPG 1.24+/1.29) PostgreSQL clusters from Claude Desktop, Claude Code, and other MCP clients.
@@ -59,4 +69,5 @@ Initial release of `@setra06/mcp-cnpg-axians` — an MCP server for managing Clo
 - TypeScript, ES modules, Node.js 18+.
 - Smoke test (`npm run test:smoke`) — 96 end-to-end steps against a live CNPG cluster.
 
+[1.0.2]: https://github.com/setra06/mcp-cnpg-axians/releases/tag/v1.0.2
 [1.0.0]: https://github.com/setra06/mcp-cnpg-axians/releases/tag/v1.0.0
